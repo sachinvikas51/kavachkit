@@ -11,3 +11,15 @@ keywords = ["claude", "ai-agent", "hooks", "cli", "security"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
+
+
+
+[lints.rust]
+unsafe_code="forbid"
+
+
+[lints.clippy]
+unwrap_used="warn"
+expect_used="warn"
+dbg_macro="warn"
+todo="warn"
