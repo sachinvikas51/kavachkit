@@ -1,1 +1,34 @@
+# Build output
 /target
+
+# rustfmt backups
+**/*.rs.bk
+
+# Debug symbols and profiling
+*.pdb
+*.profraw
+*.profdata
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings (shared .claude/settings.json stays tracked)
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# Sandbox
+/sandbox
