@@ -1,0 +1,13 @@
+[package]
+name = "kavachkit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Rules, skills, hooks, memory and security checks for Claude Code, in one small CLI"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/YOUR_GITHUB_USERNAME/kavachkit"
+readme = "README.md"
+keywords = ["claude", "ai-agent", "hooks", "cli", "security"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
