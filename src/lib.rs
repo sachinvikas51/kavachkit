@@ -12,6 +12,33 @@ pub struct HookInput {
     pub tool_input: Value,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Decision {
+    Allow,
+    Block(String),
+}
+
+pub fn check_command(command: &str) -> Decision {
+    let touches_secret_file = command.split_whitespace().any(|word| {
+        let word = word.trim_matches(|c| c == '"' || c == '\'' || c == ';');
+        let file_name = word.rsplit('/').next().unwrap_or(word);
+        is_secret_env_file(file_name)
+    });
+
+    if touches_secret_file {
+        Decision::Block(
+            "kavachkit blocked this: .env files hold secrets. Ask the user instead of reading or changing them."
+                .to_string(),
+        )
+    } else {
+        Decision::Allow
+    }
+}
+
+fn is_secret_env_file(file_name: &str) -> bool {
+    file_name == ".env" || (file_name.starts_with(".env.") && file_name != ".env.example")
+}
+
 impl HookInput {
     ///The shell comman, if this is a Bash tool call.
     pub fn command(&self) -> Option<&str> {
@@ -33,6 +60,38 @@ pub fn append_line(text: &str, path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blocks_env_files() {
+        for command in [
+            "cat .env",
+            "cat ./.env",
+            "cat config/.env.local",
+            "cat '.env'",
+            "source .env;",
+        ] {
+            assert!(
+                matches!(check_command(command), Decision::Block(_)),
+                "should block: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_safe_commands() {
+        for command in [
+            "ls",
+            "cat README.md",
+            "cat .env.example",
+            "echo environment",
+        ] {
+            assert_eq!(
+                check_command(command),
+                Decision::Allow,
+                "should allow: {command}"
+            );
+        }
+    }
 
     #[test]
     fn read_bash_command() {
