@@ -19,19 +19,25 @@ pub enum Decision {
 }
 
 const SECRET_FILE_MESSAGE: &str = "kavachkit blocked this: .env files hold secrets. Ask the user instead of reading or changing them.";
+const CLAUDE_CONFIG_MESSAGE: &str = "kavachkit blocked this: files in .claude/ control Claude's rules and safety settings. Ask the user to change them.";
 
 pub fn check_command(command: &str) -> Decision {
-    let touches_secret_file = command.split_whitespace().any(|word| {
-        let word = word.trim_matches(|c| c == '"' || c == '\'' || c == ';');
+    for word in command.split_whitespace() {
+        let word = word.trim_matches(|c| {
+            matches!(
+                c,
+                '"' | '\'' | ';' | '>' | '<' | '|' | '&' | '(' | ')' | '`'
+            )
+        });
 
-        is_secret_env_file(file_name_of(word))
-    });
-
-    if touches_secret_file {
-        Decision::Block(SECRET_FILE_MESSAGE.to_string())
-    } else {
-        Decision::Allow
+        if is_secret_env_file(file_name_of(word)) {
+            return Decision::Block(SECRET_FILE_MESSAGE.to_string());
+        }
+        if is_protected_claude_file(word) {
+            return Decision::Block(CLAUDE_CONFIG_MESSAGE.to_string());
+        }
     }
+    Decision::Allow
 }
 
 ///Checks one action from Claude, whatever tool it uses.
@@ -45,8 +51,25 @@ pub fn check_hook(hook: &HookInput) -> Decision {
         if is_secret_env_file(file_name_of(path)) {
             return Decision::Block(SECRET_FILE_MESSAGE.to_string());
         }
+        if is_file_change_tool(&hook.tool_name) && is_protected_claude_file(path) {
+            return Decision::Block(CLAUDE_CONFIG_MESSAGE.to_string());
+        }
     }
+
     Decision::Allow
+}
+
+/// True for tools that change files.
+fn is_file_change_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "Edit" | "Write" | "MultiEdit" | "NotebookEdit")
+}
+
+fn is_protected_claude_file(path: &str) -> bool {
+    let parts: Vec<&str> = path.split(['/', '\\']).collect();
+    match parts.iter().position(|part| *part == ".claude") {
+        Some(index) => parts.get(index + 1) != Some(&"plans"),
+        None => false,
+    }
 }
 
 fn is_secret_env_file(file_name: &str) -> bool {
@@ -89,6 +112,63 @@ mod tests {
 
     fn hook(json: &str) -> HookInput {
         parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn blocks_shell_changes_to_claude_config() {
+        for command in [
+            "echo '# test' >> .claude/settings.json",
+            "echo x >>.claude/settings.json",
+            "sed -i '' 's/a/b/' ~/.claude/settings.json",
+            "rm -rf .claude",
+        ] {
+            assert!(
+                matches!(check_command(command), Decision::Block(_)),
+                "should block: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_shell_commands_on_plans_and_normal_files() {
+        for command in ["cat .claude/plans/add-login.md", "ls src", "cargo test"] {
+            assert_eq!(
+                check_command(command),
+                Decision::Allow,
+                "should allow: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_changes_to_claude_config() {
+        let cases = [
+            r#"{"tool_name":"Edit","tool_input":{"file_path":".claude/settings.json"}}"#,
+            r#"{"tool_name":"Write","tool_input":{"file_path":"/p/.claude/agents/new.md"}}"#,
+            r#"{"tool_name":"MultiEdit","tool_input":{"file_path":".claude/rules/kavachkit/common/coding-style.md"}}"#,
+        ];
+        for json in cases {
+            assert!(
+                matches!(check_hook(&hook(json)), Decision::Block(_)),
+                "should block: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_plans_and_reading_claude_config() {
+        let cases = [
+            r#"{"tool_name":"Write","tool_input":{"file_path":".claude/plans/add-login.md"}}"#,
+            r#"{"tool_name":"Read","tool_input":{"file_path":".claude/settings.json"}}"#,
+            r#"{"tool_name":"Edit","tool_input":{"file_path":"src/main.rs"}}"#,
+        ];
+        for json in cases {
+            assert_eq!(
+                check_hook(&hook(json)),
+                Decision::Allow,
+                "should allow: {json}"
+            );
+        }
     }
 
     #[test]
