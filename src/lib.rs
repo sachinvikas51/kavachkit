@@ -18,21 +18,35 @@ pub enum Decision {
     Block(String),
 }
 
+const SECRET_FILE_MESSAGE: &str = "kavachkit blocked this: .env files hold secrets. Ask the user instead of reading or changing them.";
+
 pub fn check_command(command: &str) -> Decision {
     let touches_secret_file = command.split_whitespace().any(|word| {
         let word = word.trim_matches(|c| c == '"' || c == '\'' || c == ';');
-        let file_name = word.rsplit('/').next().unwrap_or(word);
-        is_secret_env_file(file_name)
+
+        is_secret_env_file(file_name_of(word))
     });
 
     if touches_secret_file {
-        Decision::Block(
-            "kavachkit blocked this: .env files hold secrets. Ask the user instead of reading or changing them."
-                .to_string(),
-        )
+        Decision::Block(SECRET_FILE_MESSAGE.to_string())
     } else {
         Decision::Allow
     }
+}
+
+///Checks one action from Claude, whatever tool it uses.
+pub fn check_hook(hook: &HookInput) -> Decision {
+    if let Some(command) = hook.command() {
+        if let Decision::Block(reason) = check_command(command) {
+            return Decision::Block(reason);
+        }
+    }
+    if let Some(path) = hook.file_path() {
+        if is_secret_env_file(file_name_of(path)) {
+            return Decision::Block(SECRET_FILE_MESSAGE.to_string());
+        }
+    }
+    Decision::Allow
 }
 
 fn is_secret_env_file(file_name: &str) -> bool {
@@ -43,6 +57,14 @@ impl HookInput {
     ///The shell comman, if this is a Bash tool call.
     pub fn command(&self) -> Option<&str> {
         self.tool_input.get("command").and_then(Value::as_str)
+    }
+
+    /// The file path, if this tool works on a file.
+    pub fn file_path(&self) -> Option<&str> {
+        self.tool_input
+            .get("file_path")
+            .or_else(|| self.tool_input.get("path"))
+            .and_then(Value::as_str)
     }
 }
 /// Turns the raw JSON text from Claude Code into a `HookInput`.
@@ -57,9 +79,48 @@ pub fn append_line(text: &str, path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+fn file_name_of(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hook(json: &str) -> HookInput {
+        parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn blocks_secret_files_for_file_tools() {
+        let cases = [
+            r#"{"tool_name":"Read","tool_input":{"file_path":"/p/sandbox/.env"}}"#,
+            r#"{"tool_name":"Edit","tool_input":{"file_path":"config/.env.local"}}"#,
+            r#"{"tool_name":"Write","tool_input":{"file_path":".env"}}"#,
+            r#"{"tool_name":"Grep","tool_input":{"pattern":"KEY","path":".env"}}"#,
+        ];
+        for json in cases {
+            assert!(
+                matches!(check_hook(&hook(json)), Decision::Block(_)),
+                "should block: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_safe_files_for_file_tools() {
+        let cases = [
+            r#"{"tool_name":"Read","tool_input":{"file_path":".env.example"}}"#,
+            r#"{"tool_name":"Read","tool_input":{"file_path":"README.md"}}"#,
+        ];
+        for json in cases {
+            assert_eq!(
+                check_hook(&hook(json)),
+                Decision::Allow,
+                "should allow: {json}"
+            );
+        }
+    }
 
     #[test]
     fn blocks_env_files() {

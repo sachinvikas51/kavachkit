@@ -13,17 +13,24 @@ fn main() -> std::io::Result<()> {
     };
 
     let command = hook.command().unwrap_or("");
-    match kavachkit::check_command(command) {
+    let file = hook.file_path().unwrap_or("");
+    match kavachkit::check_hook(&hook) {
         Decision::Allow => {
             kavachkit::append_line(
-                &format!("ALLOW tool={} command={command:?}", hook.tool_name),
+                &format!(
+                    "ALLOW tool={} command={command:?} file={file:?}",
+                    hook.tool_name
+                ),
                 &log_path,
             )?;
             Ok(())
         }
         Decision::Block(reason) => {
             kavachkit::append_line(
-                &format!("BLOCK tool={} command={command:?}", hook.tool_name),
+                &format!(
+                    "BLOCK tool={} command={command:?} file={file:?}",
+                    hook.tool_name
+                ),
                 &log_path,
             )?;
             eprintln!("{reason}");
