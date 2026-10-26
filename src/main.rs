@@ -1,6 +1,22 @@
 use kavachkit::Decision;
 
 fn main() -> std::io::Result<()> {
+    let job = std::env::args().nth(1);
+    match job.as_deref() {
+        Some("guard") => run_guard(),
+        Some("warn") => {
+            println!("warn: not build yet");
+            Ok(())
+        }
+        _ => {
+            eprintln!("usage: kavachkit <guard|warn>");
+
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_guard() -> std::io::Result<()> {
     let input = std::io::read_to_string(std::io::stdin())?;
     let log_path = std::env::temp_dir().join("kavachkit-hook.log");
     let hook = match kavachkit::parse_hook_input(&input) {
