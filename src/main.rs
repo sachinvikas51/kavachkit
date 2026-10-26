@@ -4,16 +4,62 @@ fn main() -> std::io::Result<()> {
     let job = std::env::args().nth(1);
     match job.as_deref() {
         Some("guard") => run_guard(),
-        Some("warn") => {
-            println!("warn: not build yet");
-            Ok(())
-        }
+        Some("warn") => run_warn(),
         _ => {
             eprintln!("usage: kavachkit <guard|warn>");
 
             std::process::exit(1);
         }
     }
+}
+
+fn run_warn() -> std::io::Result<()> {
+    // Real code files are small, and hooks must be fast.
+    const MAX_FILE_SIZE: u64 = 1_000_000; // 1 MB
+
+    let input = std::io::read_to_string(std::io::stdin())?;
+    // 1. Read the message. If it's broken, stay quiet.
+    let Ok(hook) = kavachkit::parse_hook_input(&input) else {
+        return Ok(());
+    };
+
+    // 2. Get the file path. If there's none, stay quiet.
+    let Some(path) = hook.file_path() else {
+        return Ok(());
+    };
+
+    // Only our own code files: no node_modules, target, README, images…
+    //  This check doesn't touch the disk, so it goes first.
+    if !kavachkit::should_check_for_debug(path) {
+        return Ok(());
+    }
+
+    // Skip big files. This only asks the disk for the size.
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return Ok(());
+    };
+    if metadata.len() > MAX_FILE_SIZE {
+        return Ok(());
+    }
+
+    // Read the file. If we can't, stay quiet.
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Ok(());
+    };
+
+    // Find debug lines.
+    let found = kavachkit::find_debug_lines(path, &content);
+
+    // Nothing found → quiet. Found → warn Claude and exit 2.
+    if found.is_empty() {
+        return Ok(());
+    }
+    eprintln!("kavachkit: leftover debug lines in {path}:");
+    for line in &found {
+        eprintln!("  {line}");
+    }
+    eprintln!("Please remove them before finishing.");
+    std::process::exit(2);
 }
 
 fn run_guard() -> std::io::Result<()> {

@@ -64,6 +64,22 @@ fn is_file_change_tool(tool_name: &str) -> bool {
     matches!(tool_name, "Edit" | "Write" | "MultiEdit" | "NotebookEdit")
 }
 
+/// Folders with downloaded or generated code that we never check.
+const SKIP_FOLDERS: &[&str] = &["node_modules", "target", ".git", "dist", "build", "vendor"];
+
+/// True if the warn hook should look inside this file.
+pub fn should_check_for_debug(path: &str) -> bool {
+    let in_skipped_folder = path
+        .split(['/', '\\'])
+        .any(|part| SKIP_FOLDERS.contains(&part));
+    if in_skipped_folder {
+        return false;
+    }
+
+    let extension = path.rsplit(".").next().unwrap_or("");
+    matches!(extension, "rs" | "js" | "ts" | "jsx" | "tsx")
+}
+
 fn is_protected_claude_file(path: &str) -> bool {
     let parts: Vec<&str> = path.split(['/', '\\']).collect();
     match parts.iter().position(|part| *part == ".claude") {
@@ -134,6 +150,18 @@ mod tests {
 
     fn hook(json: &str) -> HookInput {
         parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn checks_only_own_code_files() {
+        assert!(should_check_for_debug("src/main.rs"));
+        assert!(should_check_for_debug("web/app.tsx"));
+
+        assert!(!should_check_for_debug("node_modules/lib/index.js"));
+        assert!(!should_check_for_debug("target/debug/build.rs"));
+        assert!(!should_check_for_debug("/p/.git/hooks/pre-commit.js"));
+        assert!(!should_check_for_debug("README.md"));
+        assert!(!should_check_for_debug("logo.png"));
     }
 
     #[test]
