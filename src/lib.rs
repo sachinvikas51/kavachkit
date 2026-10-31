@@ -118,6 +118,33 @@ impl SessionFacts {
             _ => {}
         }
     }
+    pub fn to_note(&self, session_id: &str) -> String {
+        const MAX_REQUESTS: usize = 10;
+        const MAX_REQUESTS_CHARS: usize = 200;
+
+        let mut note = format!("# Session {session_id}\n\n## Asked\n");
+
+        let start = self.requests.len().saturating_sub(MAX_REQUESTS);
+        let recent_requests = &self.requests[start..];
+        if recent_requests.is_empty() {
+            note.push_str("- (none)\n");
+        }
+
+        for request in recent_requests {
+            let safe = shorten(&hide_secrets(request), MAX_REQUESTS_CHARS);
+            note.push_str(&format!("- {safe}\n"));
+        }
+
+        note.push_str("\n## Files changed\n");
+        if self.changed_files.is_empty() {
+            note.push_str("- (none)\n");
+        }
+        for file in &self.changed_files {
+            note.push_str(&format!("- {file}\n"));
+        }
+
+        note
+    }
 }
 
 const SECRET_FILE_MESSAGE: &str = "kavachkit blocked this: .env files hold secrets. Ask the user instead of reading or changing them.";
@@ -262,6 +289,32 @@ mod tests {
 
     fn hook(json: &str) -> HookInput {
         parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn builds_a_safe_note() {
+        let facts = SessionFacts {
+            requests: vec!["use key sk-abc123 to log in".to_string()],
+            changed_files: vec!["src/a.rs".to_string()],
+        };
+        assert_eq!(
+            facts.to_note("abc"),
+            "# Session abc\n\n## Asked\n- use key [hidden] to log in\n\n## Files changed\n- src/a.rs\n"
+        );
+    }
+
+    #[test]
+    fn note_keeps_only_last_ten_request() {
+        let facts = SessionFacts {
+            requests: (1..=12).map(|n| format!("request {n}")).collect(),
+            changed_files: vec![],
+        };
+
+        let note = facts.to_note("abc");
+        assert!(!note.contains("-request 2\n"));
+        assert!(note.contains("- request 3\n"));
+        assert!(note.contains("- request 12\n"));
+        assert!(note.contains("## Files changed\n- (none)\n"));
     }
 
     #[test]
