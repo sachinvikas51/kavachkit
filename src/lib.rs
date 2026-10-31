@@ -24,6 +24,53 @@ pub struct SessionFacts {
     pub changed_files: Vec<String>,
 }
 
+///Word beginnings used by common API keys(AI providers, GitHub, AWS, Slack)
+const SECRET_PREFIXES: &[&str] = &["sk-", "ghp_", "github_pat_", "AKIA", "xoxb-"];
+/// Words that, inside a `name=` part, usually mean a secret value follows.
+const SECRET_NAME_PARTS: &[&str] = &["secret", "password", "passwd", "token", "key"];
+
+/// True if a single word looks like a secret.
+fn looks_like_secret(word: &str) -> bool {
+    // 1. A known key format anywhere after a symbol: 'sk-…', Authorization:sk-…, ?key=ghp_…
+    let has_key_format = word
+        .split(|c: char| {
+            matches!(
+                c,
+                '=' | ':' | '"' | '\'' | '(' | ')' | ',' | ';' | '?' | '&' | '/'
+            )
+        })
+        .any(|piece| {
+            SECRET_PREFIXES
+                .iter()
+                .any(|prefix| piece.starts_with(prefix))
+        });
+
+    if has_key_format {
+        return true;
+    }
+    // 2. A secret-sounding name before "=": secret_key=…, DB_PASSWORD=…
+    let Some((name, _value)) = word.split_once("=") else {
+        return false;
+    };
+
+    let name = name.to_lowercase();
+    SECRET_NAME_PARTS.iter().any(|part| name.contains(part))
+}
+
+/// Replaces secret-looking words with `[hidden]` and joins everything into one line.
+pub fn hide_secrets(text: &str) -> String {
+    text.split_whitespace()
+        .map(|word| {
+            if looks_like_secret(word) {
+                "[hidden]"
+            } else {
+                word
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl SessionFacts {
     pub fn add_line(&mut self, line: &str, project_dir: &str) {
         let Ok(event) = serde_json::from_str::<Value>(line) else {
@@ -205,6 +252,33 @@ mod tests {
 
     fn hook(json: &str) -> HookInput {
         parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn hides_secrets_in_text() {
+        // Secrets are hidden.
+        assert_eq!(
+            hide_secrets("use key sk-abc123\nand password=hunter2 please"),
+            "use key [hidden] and [hidden] please"
+        );
+        assert_eq!(
+            hide_secrets("secret_key=abc ACCESS_TOKEN=xyz"),
+            "[hidden] [hidden]"
+        );
+        assert_eq!(hide_secrets("'sk-abc123'"), "[hidden]");
+        assert_eq!(hide_secrets("Authorization:sk-abc123"), "[hidden]");
+        assert_eq!(hide_secrets("https://x.com?key=ghp_abc"), "[hidden]");
+
+        // Normal words are kept.
+        assert_eq!(
+            hide_secrets("keep this secret, call the secretary"),
+            "keep this secret, call the secretary"
+        );
+        assert_eq!(hide_secrets("count=5"), "count=5");
+        assert_eq!(
+            hide_secrets("task-list disk-space risk-free"),
+            "task-list disk-space risk-free"
+        );
     }
 
     #[test]
