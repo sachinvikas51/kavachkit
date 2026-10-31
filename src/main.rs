@@ -1,16 +1,50 @@
 use kavachkit::Decision;
+use std::io::BufRead;
+use std::path::Path;
 
 fn main() -> std::io::Result<()> {
     let job = std::env::args().nth(1);
     match job.as_deref() {
         Some("guard") => run_guard(),
         Some("warn") => run_warn(),
+        Some("memory-save") => run_memory_save(),
         _ => {
             eprintln!("usage: kavachkit <guard|warn>");
 
             std::process::exit(1);
         }
     }
+}
+
+fn run_memory_save() -> std::io::Result<()> {
+    let _ = save_session_note();
+    Ok(())
+}
+
+fn save_session_note() -> std::io::Result<()> {
+    // Read the message from Claude Code.
+    let input = std::io::read_to_string(std::io::stdin())?;
+    let Ok(session) = kavachkit::parse_session_input(&input) else {
+        return Ok(());
+    };
+
+    // Read the chat history line by line, and fill the box.
+    let file = std::fs::File::open(&session.transcript_path)?;
+    let reader = std::io::BufReader::new(file);
+    let mut facts = kavachkit::SessionFacts::default();
+    for line in reader.lines() {
+        let Ok(line) = line else {
+            continue;
+        };
+        facts.add_line(&line, &session.cwd);
+    }
+
+    // 3. Write the note to <project>/.claude/memory/<id>.md
+    let id = kavachkit::short_session_id(&session.session_id);
+    let memory_dir = Path::new(&session.cwd).join(".claude").join("memory");
+    std::fs::create_dir_all(&memory_dir)?;
+    std::fs::write(memory_dir.join(format!("{id}.md")), facts.to_note(&id))?;
+    Ok(())
 }
 
 fn run_warn() -> std::io::Result<()> {
