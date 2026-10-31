@@ -18,6 +18,51 @@ pub enum Decision {
     Block(String),
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub struct SessionFacts {
+    pub requests: Vec<String>,
+    pub changed_files: Vec<String>,
+}
+
+impl SessionFacts {
+    pub fn add_line(&mut self, line: &str, project_dir: &str) {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            return;
+        };
+
+        match event.get("type").and_then(Value::as_str) {
+            Some("user") => {
+                // Plain text = a request. A list = a tool answer, so skip it.
+                if let Some(text) = event.pointer("/message/content").and_then(Value::as_str) {
+                    self.requests.push(text.to_string());
+                }
+            }
+
+            Some("assistant") => {
+                let Some(parts) = event.pointer("/message/content").and_then(Value::as_array)
+                else {
+                    return;
+                };
+                for part in parts {
+                    let name = part.get("name").and_then(Value::as_str).unwrap_or("");
+                    if !is_file_change_tool(name) {
+                        continue;
+                    }
+                    let Some(path) = part.pointer("/input/file_path").and_then(Value::as_str)
+                    else {
+                        continue;
+                    };
+                    let short = project_relative(path, project_dir);
+                    if !self.changed_files.contains(&short) {
+                        self.changed_files.push(short);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 const SECRET_FILE_MESSAGE: &str = "kavachkit blocked this: .env files hold secrets. Ask the user instead of reading or changing them.";
 const CLAUDE_CONFIG_MESSAGE: &str = "kavachkit blocked this: files in .claude/ control Claude's rules and safety settings. Ask the user to change them.";
 
@@ -122,6 +167,16 @@ fn file_name_of(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
+/// Makes a path relative to the project:`/home/me/project/src/a.rs` -> `src/a.rs`.
+/// Files outside the project keep only their name, so no private folder leak.
+fn project_relative(path: &str, project_dir: &str) -> String {
+    let project_prefix = format!("{}/", project_dir.trim_end_matches('/'));
+    match path.strip_prefix(&project_prefix) {
+        Some(rest) => rest.to_string(),
+        None => file_name_of(path).to_string(),
+    }
+}
+
 /// Finds leftover debug lines in a file, based on its file name.
 pub fn find_debug_lines(file_name: &str, conetent: &str) -> Vec<String> {
     let extension = file_name.rsplit(".").next().unwrap_or("");
@@ -150,6 +205,41 @@ mod tests {
 
     fn hook(json: &str) -> HookInput {
         parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn collects_session_facts() {
+        let project = "/home/me/proj";
+        let lines = [
+            r#"{"type":"user","message":{"content":"Add a function last_line"}}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#,
+            r#"{"type":"assistant","message":{"content":[
+                {"type":"text","text":"Let me look."},
+                {"type":"tool_use","name":"Read","input":{"file_path":"/home/me/proj/src/a.rs"}},
+                {"type":"tool_use","name":"Edit","input":{"file_path":"/home/me/proj/src/a.rs"}}
+            ]}}"#,
+            r#"{"type":"assistant","message":{"content":[
+                {"type":"tool_use","name":"Edit","input":{"file_path":"/home/me/proj/src/a.rs"}}
+            ]}}"#,
+            r#"{"type":"assistant","message":{"content":[
+                {"type":"tool_use","name":"Write","input":{"file_path":"/tmp/demo.rs"}}
+            ]}}"#,
+            "this is not json",
+            r#"{"type":"cost-state","cost":1}"#,
+        ];
+
+        let mut facts = SessionFacts::default();
+        for line in lines {
+            facts.add_line(line, project);
+        }
+
+        assert_eq!(
+            facts,
+            SessionFacts {
+                requests: vec!["Add a function last_line".to_string()],
+                changed_files: vec!["src/a.rs".to_string(), "demo.rs".to_string()],
+            }
+        );
     }
 
     #[test]
