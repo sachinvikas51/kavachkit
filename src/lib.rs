@@ -257,11 +257,18 @@ pub fn should_check_for_debug(path: &str) -> bool {
     matches!(extension, "rs" | "js" | "ts" | "jsx" | "tsx")
 }
 
+// Folders inside `.claude/` that Claude may write to: plans and memory notes.
+const CLAUDE_WRITABLE_FOLDERS: &[&str] = &["plans", "memory"];
+
+/// True for files inside a `.claude` folder, except the writable folders above.
 fn is_protected_claude_file(path: &str) -> bool {
     let parts: Vec<&str> = path.split(['/', '\\']).collect();
-    match parts.iter().position(|part| *part == ".claude") {
-        Some(index) => parts.get(index + 1) != Some(&"plans"),
-        None => false,
+    let Some(index) = parts.iter().position(|part| *part == ".claude") else {
+        return false;
+    };
+    match parts.get(index + 1) {
+        Some(next) => !CLAUDE_WRITABLE_FOLDERS.contains(next),
+        None => true,
     }
 }
 
@@ -535,6 +542,7 @@ mod tests {
             r#"{"tool_name":"Write","tool_input":{"file_path":".claude/plans/add-login.md"}}"#,
             r#"{"tool_name":"Read","tool_input":{"file_path":".claude/settings.json"}}"#,
             r#"{"tool_name":"Edit","tool_input":{"file_path":"src/main.rs"}}"#,
+            r#"{"tool_name":"Write","tool_input":{"file_path":".claude/memory/summary-login.md"}}"#,
         ];
         for json in cases {
             assert_eq!(
