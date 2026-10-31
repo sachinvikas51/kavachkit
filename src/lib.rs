@@ -24,6 +24,33 @@ pub struct SessionFacts {
     pub changed_files: Vec<String>,
 }
 
+/// The parts of a Stop hook message that memory needs.
+#[derive(Debug, Deserialize)]
+pub struct SessionInput {
+    pub session_id: String,
+    pub transcript_path: String,
+    pub cwd: String,
+}
+
+/// Turns the raw JSON text from Claude Code into a `SessionInput`.
+pub fn parse_session_input(text: &str) -> Result<SessionInput, serde_json::Error> {
+    serde_json::from_str(text.trim())
+}
+
+/// A short, safe name for a session's note file: only letters and numbers, max 8.
+pub fn short_session_id(session_id: &str) -> String {
+    let short: String = session_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(8)
+        .collect();
+    if short.is_empty() {
+        "unknown".to_string()
+    } else {
+        short
+    }
+}
+
 ///Word beginnings used by common API keys(AI providers, GitHub, AWS, Slack)
 const SECRET_PREFIXES: &[&str] = &["sk-", "ghp_", "github_pat_", "AKIA", "xoxb-"];
 /// Words that, inside a `name=` part, usually mean a secret value follows.
@@ -289,6 +316,16 @@ mod tests {
 
     fn hook(json: &str) -> HookInput {
         parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn reads_session_input_and_makes_safe_id() {
+        let text = r#"{"session_id":"a540f189-8042","transcript_path":"/t.jsonl","cwd":"/proj","hook_event_name":"Stop"}"#;
+        let session = parse_session_input(text).unwrap();
+        assert_eq!(session.cwd, "/proj");
+        assert_eq!(short_session_id(&session.session_id), "a540f189");
+        assert_eq!(short_session_id("../../etc/x"), "etcx");
+        assert_eq!(short_session_id("---"), "unknown");
     }
 
     #[test]
