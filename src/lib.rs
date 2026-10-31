@@ -196,7 +196,7 @@ impl SessionFacts {
 }
 
 const SECRET_FILE_MESSAGE: &str = "kavachkit blocked this: .env files hold secrets. Ask the user instead of reading or changing them.";
-const CLAUDE_CONFIG_MESSAGE: &str = "kavachkit blocked this: files in .claude/ control Claude's rules and safety settings. Ask the user to change them.";
+const CLAUDE_CONFIG_MESSAGE: &str = "kavachkit blocked this: shell commands and edits on .claude/ are not allowed, because it holds Claude's rules and safety settings. To look inside .claude/, use the Read, Grep or Glob tools instead. To change these files, ask the user.";
 
 pub fn check_command(command: &str) -> Decision {
     for word in command.split_whitespace() {
