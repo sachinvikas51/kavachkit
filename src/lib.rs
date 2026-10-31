@@ -71,6 +71,16 @@ pub fn hide_secrets(text: &str) -> String {
         .join(" ")
 }
 
+/// Keeps at most `max_chars` characters, adding "…" if the text was cut.
+/// Counts characters, not bytes, so it never cuts a character in half.
+pub fn shorten(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max_chars).collect();
+    format!("{cut}...")
+}
+
 impl SessionFacts {
     pub fn add_line(&mut self, line: &str, project_dir: &str) {
         let Ok(event) = serde_json::from_str::<Value>(line) else {
@@ -252,6 +262,13 @@ mod tests {
 
     fn hook(json: &str) -> HookInput {
         parse_hook_input(json).unwrap()
+    }
+
+    #[test]
+    fn shortens_long_text_safely() {
+        assert_eq!(shorten("hello", 10), "hello");
+        assert_eq!(shorten("hello world", 5), "hello...");
+        assert_eq!(shorten("नमस्ते दुनिया", 3), "नमस...");
     }
 
     #[test]
