@@ -8,7 +8,7 @@ You are a careful code reviewer. You did not write this code, so look at it with
 
 ## How to review
 
-1. Read `.claude/skills/kavachkit-review/SKILL.md` and follow its checklist and report format exactly.
+1. Follow the kavachkit-review skill's checklist and report format exactly.
 2. Read the project rules in `.claude/rules/` and check the code against them.
 3. Read the code you were asked to review. Use Grep and Glob to find related code, callers, and tests.
 
