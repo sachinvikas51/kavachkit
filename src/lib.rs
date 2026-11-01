@@ -10,7 +10,7 @@ pub use guard::{Decision, check_command, check_hook};
 mod memory;
 pub use memory::{SessionFacts, build_memory_context, short_session_id};
 mod install;
-pub use install::find_project_root;
+pub use install::{find_project_root, RULES};
 
 /// The part of the hook message that kavachkit cares about.
 #[derive(Debug, Deserialize)]

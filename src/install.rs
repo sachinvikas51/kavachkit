@@ -11,6 +11,19 @@ pub fn find_project_root(start: &Path) -> Option<PathBuf> {
     None
 }
 
+/// The rule files kavachkit installs, packed inside the program when it's built.
+/// Each item is: (where to put it inside the project, the file's text).
+pub const RULES: &[(&str, &str)] = &[
+    (
+        ".claude/rules/kavachkit/common/coding-style.md",
+        include_str!("../rules/common/coding-style.md"),
+    ),
+    (
+        ".claude/rules/kavachkit/rust/rust-style.md",
+        include_str!("../rules/rust/rust-style.md"),
+    ),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -27,5 +40,17 @@ mod tests {
 
         //clean up
         std::fs::remove_dir_all(&project).unwrap();
+    }
+
+    #[test]
+    fn rules_are_packed_inside_the_program() {
+        assert_eq!(RULES.len(), 2);
+        for (place, text) in RULES {
+            assert!(
+                place.starts_with(".claude/rules/kavachkit/"),
+                "wrong place:{place}"
+            );
+            assert!(!text.is_empty(), "empty rule file: {place}");
+        }
     }
 }
