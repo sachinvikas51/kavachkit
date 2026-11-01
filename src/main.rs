@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use kavachkit::Decision;
+use kavachkit::Status;
 use std::io::BufRead;
 use std::path::Path;
 
@@ -57,11 +58,54 @@ fn main() -> std::io::Result<()> {
         Command::MemoryLoad => run_memory_load(),
         Command::Install { memory, dry_run } => run_install(memory, dry_run),
         Command::Uninstall { dry_run } => run_uninstall(dry_run),
-        Command::Doctor => {
-            eprintln!("doctor: not built yet");
-            Ok(())
+        Command::Doctor => run_doctor(),
+    }
+}
+
+/// `kavachkit doctor`: checks the setup and says how to fix anything wrong. Changes nothing.
+fn run_doctor() -> std::io::Result<()> {
+    // 1. Collect all the results.
+    let path_var = std::env::var_os("PATH");
+    let current_folder = std::env::current_dir()?;
+    let root = kavachkit::find_project_root(&current_folder);
+
+    let mut checks = vec![kavachkit::check_program_on_path(path_var.as_deref())];
+    checks.extend(kavachkit::check_project(root.as_deref()));
+
+    // 2. Print each result.
+    match &root {
+        Some(root) => println!("kavachkit doctor (project: {})", root.display()),
+        None => println!("kavachkit doctor"),
+    }
+    for check in &checks {
+        let symbol = match check.status {
+            Status::Ok => "✓",
+            Status::Warning => "!",
+            Status::Problem => "✗",
+        };
+        println!("  {symbol} {}", check.message);
+        if let Some(fix) = &check.fix {
+            println!("    → {fix}");
         }
     }
+
+    // 3. Summary.
+    let warnings = checks
+        .iter()
+        .filter(|check| check.status == Status::Warning)
+        .count();
+    let problems = checks
+        .iter()
+        .filter(|check| check.status == Status::Problem)
+        .count();
+    println!();
+    println!("{warnings} warning(s), {problems} problem(s).");
+
+    // 4. Exit code: 1 if anything is broken.
+    if problems > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 fn run_uninstall(dry_run: bool) -> std::io::Result<()> {

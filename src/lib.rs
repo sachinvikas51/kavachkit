@@ -14,7 +14,7 @@ pub use install::{
     MEMORY_GITIGNORE_LINE, RULES, add_gitignore_line, find_project_root, install, uninstall,
 };
 mod doctor;
-pub use doctor::{check_program_on_path, check_project, Check, Status};
+pub use doctor::{Check, Status, check_program_on_path, check_project};
 
 /// The part of the hook message that kavachkit cares about.
 #[derive(Debug, Deserialize)]

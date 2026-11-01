@@ -1,6 +1,6 @@
+use crate::install::{MEMORY_GITIGNORE_LINE, RULES};
 use std::ffi::OsStr;
 use std::path::Path;
-use crate::install::{MEMORY_GITIGNORE_LINE, RULES};
 
 /// How healthy one check is.
 #[derive(Debug, Clone, Copy, PartialEq)]
