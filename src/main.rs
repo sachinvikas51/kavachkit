@@ -1,18 +1,71 @@
+use clap::{Parser, Subcommand, ValueEnum};
 use kavachkit::Decision;
 use std::io::BufRead;
 use std::path::Path;
 
-fn main() -> std::io::Result<()> {
-    let job = std::env::args().nth(1);
-    match job.as_deref() {
-        Some("guard") => run_guard(),
-        Some("warn") => run_warn(),
-        Some("memory-save") => run_memory_save(),
-        Some("memory-load") => run_memory_load(),
-        _ => {
-            eprintln!("usage: kavachkit <guard|warn|memory-save|memory-load>");
+/// Armor for your AI coding agent.
+#[derive(Parser)]
+#[command(name = "kavachkit", version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
 
-            std::process::exit(1);
+/// Whether memory notes are shared in git or kept private.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum MemoryMode {
+    Shared,
+    Private,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Add kavachkit's rules to this project and keep memory private.
+    Install {
+        /// Share memory notes with your team in git, or keep them private.
+        #[arg(long,value_enum, default_value_t=MemoryMode::Private)]
+        memory: MemoryMode,
+        /// Show what would change, without changing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove only the files kavachkit added.
+    Uninstall {
+        /// Show what would be removed, without removing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that kavachkit is set up correctly.
+    Doctor,
+    // Called by Claude Code hooks, not by people, so hidden from --help.
+    #[command(hide = true)]
+    Guard,
+    #[command(hide = true)]
+    Warn,
+    #[command(hide = true)]
+    MemorySave,
+    #[command(hide = true)]
+    MemoryLoad,
+}
+
+fn main() -> std::io::Result<()> {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Guard => run_guard(),
+        Command::Warn => run_warn(),
+        Command::MemorySave => run_memory_save(),
+        Command::MemoryLoad => run_memory_load(),
+        Command::Install { memory, dry_run } => {
+            eprintln!("install (memory={memory:?}, dry_run={dry_run}): not built yet");
+            Ok(())
+        }
+        Command::Uninstall { dry_run } => {
+            eprintln!("uninstall (dry_run={dry_run}): not built yet");
+            Ok(())
+        }
+        Command::Doctor => {
+            eprintln!("doctor: not built yet");
+            Ok(())
         }
     }
 }
