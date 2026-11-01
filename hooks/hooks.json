@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v kavachkit >/dev/null 2>&1; then exec kavachkit guard; else echo 'kavachkit is not installed, so this action was blocked to keep you safe. Install it with: cargo install kavachkit' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v kavachkit >/dev/null 2>&1; then exec kavachkit warn; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v kavachkit >/dev/null 2>&1; then exec kavachkit memory-save; fi"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v kavachkit >/dev/null 2>&1; then exec kavachkit memory-load; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
