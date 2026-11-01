@@ -1,0 +1,11 @@
+{
+  "name": "kavachkit",
+  "owner": { "name": "Sachin Vikas" },
+  "plugins": [
+    {
+      "name": "kavachkit",
+      "source": "./",
+      "description": "Armor for your AI coding agent: safety hooks, memory, skills, commands and a read-only reviewer."
+    }
+  ]
+}
