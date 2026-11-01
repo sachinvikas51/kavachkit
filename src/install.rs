@@ -24,6 +24,23 @@ pub const RULES: &[(&str, &str)] = &[
     ),
 ];
 
+/// The line that keeps memory notes out of git.
+pub const MEMORY_GITIGNORE_LINE: &str = ".claude/memory/";
+/// Adds `line` to the end of a `.gitignore` text, if it isn't there already.
+/// Returns `None` if nothing needs to change.
+pub fn add_gitignore_line(current: &str, line: &str) -> Option<String> {
+    if current.lines().any(|existing| existing.trim() == line) {
+        return None;
+    }
+    let mut updated = current.to_string();
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str(line);
+    updated.push('\n');
+    Some(updated)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,5 +69,29 @@ mod tests {
             );
             assert!(!text.is_empty(), "empty rule file: {place}");
         }
+    }
+
+    #[test]
+    fn adds_gitignore_line_safely() {
+        let line = MEMORY_GITIGNORE_LINE;
+        // Empty file: just our line.
+        assert_eq!(
+            add_gitignore_line("", line),
+            Some(".claude/memory/\n".to_string())
+        );
+        // Normal file: added at the end.
+        assert_eq!(
+            add_gitignore_line("target\n", line),
+            Some("target\n.claude/memory/\n".to_string())
+        );
+
+        // No new line at the end: one is added first, so lines don't stick together.
+        assert_eq!(
+            add_gitignore_line("node_modules", line),
+            Some("node_modules\n.claude/memory/\n".to_string())
+        );
+
+        // Already there: nothing to change.
+        assert_eq!(add_gitignore_line("target\n.claude/memory/\n", line), None);
     }
 }
