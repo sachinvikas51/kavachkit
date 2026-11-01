@@ -3,6 +3,8 @@ use serde_json::Value;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+mod warn;
+pub use warn::{find_debug_lines, should_check_for_debug};
 
 /// The part of the hook message that kavachkit cares about.
 #[derive(Debug, Deserialize)]
@@ -241,22 +243,6 @@ fn is_file_change_tool(tool_name: &str) -> bool {
     matches!(tool_name, "Edit" | "Write" | "MultiEdit" | "NotebookEdit")
 }
 
-/// Folders with downloaded or generated code that we never check.
-const SKIP_FOLDERS: &[&str] = &["node_modules", "target", ".git", "dist", "build", "vendor"];
-
-/// True if the warn hook should look inside this file.
-pub fn should_check_for_debug(path: &str) -> bool {
-    let in_skipped_folder = path
-        .split(['/', '\\'])
-        .any(|part| SKIP_FOLDERS.contains(&part));
-    if in_skipped_folder {
-        return false;
-    }
-
-    let extension = path.rsplit(".").next().unwrap_or("");
-    matches!(extension, "rs" | "js" | "ts" | "jsx" | "tsx")
-}
-
 // Folders inside `.claude/` that Claude may write to: plans and memory notes.
 const CLAUDE_WRITABLE_FOLDERS: &[&str] = &["plans", "memory"];
 
@@ -314,28 +300,6 @@ fn project_relative(path: &str, project_dir: &str) -> String {
         Some(rest) => rest.to_string(),
         None => file_name_of(path).to_string(),
     }
-}
-
-/// Finds leftover debug lines in a file, based on its file name.
-pub fn find_debug_lines(file_name: &str, conetent: &str) -> Vec<String> {
-    let extension = file_name.rsplit(".").next().unwrap_or("");
-    let patters: &[&str] = match extension {
-        "rs" => &["dbg!("],
-        "js" | "ts" | "jsx" | "tsx" => &["console.log("],
-        _ => &[],
-    };
-
-    let mut found = Vec::new();
-    for (index, line) in conetent.lines().enumerate() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("//") {
-            continue;
-        }
-        if patters.iter().any(|pattern| line.contains(pattern)) {
-            found.push(format!("line {}: {}", index + 1, line.trim()));
-        }
-    }
-    found
 }
 
 #[cfg(test)]
@@ -464,35 +428,6 @@ mod tests {
                 changed_files: vec!["src/a.rs".to_string(), "demo.rs".to_string()],
             }
         );
-    }
-
-    #[test]
-    fn checks_only_own_code_files() {
-        assert!(should_check_for_debug("src/main.rs"));
-        assert!(should_check_for_debug("web/app.tsx"));
-
-        assert!(!should_check_for_debug("node_modules/lib/index.js"));
-        assert!(!should_check_for_debug("target/debug/build.rs"));
-        assert!(!should_check_for_debug("/p/.git/hooks/pre-commit.js"));
-        assert!(!should_check_for_debug("README.md"));
-        assert!(!should_check_for_debug("logo.png"));
-    }
-
-    #[test]
-    fn finds_debug_lines() {
-        let found = find_debug_lines("main.rs", "let x = 1;\ndbg!(x);");
-        assert_eq!(found.len(), 1);
-        assert!(found[0].starts_with("line 2"));
-
-        for name in ["main.js", "main.ts", "main.jsx", "main.tsx"] {
-            let found = find_debug_lines(name, "let x = 1;\nconsole.log(x);");
-            assert_eq!(found.len(), 1);
-            assert!(found[0].starts_with("line 2"));
-        }
-
-        assert!(find_debug_lines("app.js", "// console.log(a);").is_empty());
-        assert!(find_debug_lines("notes.md", "dbg!(x)").is_empty());
-        assert!(find_debug_lines("main.rs", "let x = 1;").is_empty());
     }
 
     #[test]
