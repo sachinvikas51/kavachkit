@@ -55,19 +55,66 @@ fn main() -> std::io::Result<()> {
         Command::Warn => run_warn(),
         Command::MemorySave => run_memory_save(),
         Command::MemoryLoad => run_memory_load(),
-        Command::Install { memory, dry_run } => {
-            eprintln!("install (memory={memory:?}, dry_run={dry_run}): not built yet");
-            Ok(())
-        }
-        Command::Uninstall { dry_run } => {
-            eprintln!("uninstall (dry_run={dry_run}): not built yet");
-            Ok(())
-        }
+        Command::Install { memory, dry_run } => run_install(memory, dry_run),
+        Command::Uninstall { dry_run } => run_uninstall(dry_run),
         Command::Doctor => {
             eprintln!("doctor: not built yet");
             Ok(())
         }
     }
+}
+
+fn run_uninstall(dry_run: bool) -> std::io::Result<()> {
+    let current_folder = std::env::current_dir()?;
+    let Some(root) = kavachkit::find_project_root(&current_folder) else {
+        eprintln!("kavachkit uninstall: no git project found here.");
+        eprintln!("Run it inside a project folder (one with .git).");
+        std::process::exit(1);
+    };
+
+    let mode = if dry_run { " --dry-run" } else { "" };
+    println!("kavachkit uninstall{mode} (project: {})", root.display());
+
+    for line in kavachkit::uninstall(&root, dry_run)? {
+        println!("{line}");
+    }
+
+    if dry_run {
+        println!("Dry run: nothing was changed.");
+    } else {
+        println!("Done. Restart Claude Code to unload the rules.");
+    }
+
+    Ok(())
+}
+
+/// `kavachkit install`: adds the rules to this project and keeps memory private.
+fn run_install(memory: MemoryMode, dry_run: bool) -> std::io::Result<()> {
+    //Find the project folder (the one with .git).
+    let current_folder = std::env::current_dir()?;
+    let Some(root) = kavachkit::find_project_root(&current_folder) else {
+        eprintln!("kavachkit install: no git project found here.");
+        eprintln!("Run it inside a project folder (one with .git).");
+        std::process::exit(1);
+    };
+    // Show which project.
+    let mode = if dry_run { " --dry-run" } else { "" };
+    println!("kavachkit install{mode} (project: {})", root.display());
+
+    // Do the install, and show the report.
+    let keep_private = matches!(memory, MemoryMode::Private);
+    for line in kavachkit::install(&root, keep_private, dry_run)? {
+        println!("{line}");
+    }
+
+    // Finish.
+    if dry_run {
+        println!("Dry run: nothing was changed.");
+    } else {
+        println!("Done. Restart Claude Code to load the rules.");
+    }
+
+    Ok(())
 }
 
 fn run_memory_load() -> std::io::Result<()> {

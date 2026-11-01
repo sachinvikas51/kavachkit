@@ -10,7 +10,11 @@ pub use guard::{Decision, check_command, check_hook};
 mod memory;
 pub use memory::{SessionFacts, build_memory_context, short_session_id};
 mod install;
-pub use install::{MEMORY_GITIGNORE_LINE, RULES, add_gitignore_line, find_project_root};
+pub use install::{
+    MEMORY_GITIGNORE_LINE, RULES, add_gitignore_line, find_project_root, install, uninstall,
+};
+mod doctor;
+pub use doctor::{check_program_on_path, check_project, Check, Status};
 
 /// The part of the hook message that kavachkit cares about.
 #[derive(Debug, Deserialize)]
