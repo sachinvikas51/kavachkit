@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Armor for your AI coding agent: safety hooks, memory, skills, commands and a read-only reviewer for Claude Code.",
   "author": { "name": "Sachin Vikas" },
-  "repository": "https://github.com/YOUR_GITHUB_USERNAME/kavachkit",
+  "repository": "https://github.com/sachinvikas51/kavachkit",
   "license": "MIT OR Apache-2.0",
   "keywords": ["security", "hooks", "memory", "rust"]
 }
