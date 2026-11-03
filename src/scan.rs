@@ -1,3 +1,4 @@
+use crate::memory::looks_like_secret;
 use std::path::{Path, PathBuf};
 
 /// How serious a finding is.
@@ -54,6 +55,32 @@ fn collect_files(folder: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
+/// Shows only the first 4 characters, so the report never leaks the secret again.
+fn hint(secret: &str) -> String {
+    let start: String = secret.chars().take(4).collect();
+    format!("{start}...")
+}
+
+/// Shows only the first 4 characters, so the report never leaks the secret again.
+pub fn find_secrets(file: &str, text: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        for word in line.split_ascii_whitespace() {
+            if looks_like_secret(word) {
+                findings.push(Finding {
+                    level: Level::High,
+                    file: file.to_string(),
+                    line: index + 1,
+                    what: format!("looks like a secret: {}", hint(word)),
+                    fix: "remove it, and make a new key (the old one may already be leaked)"
+                        .to_string(),
+                });
+            }
+        }
+    }
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +107,22 @@ mod tests {
         assert!(!names.contains(&"README.md".to_string()));
 
         std::fs::remove_dir_all(&project).unwrap();
+    }
+
+    #[test]
+    fn finds_secrets_with_line_numbers_without_showing_them() {
+        let text = "# Deploy\nRun the script.\nUse key sk-live-abc123xyz to log in.";
+        let findings = find_secrets("SKILL.md", text);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].level, Level::High);
+        assert_eq!(findings[0].line, 3);
+        // The report must never contain the full secret.
+        assert!(!findings[0].what.contains("abc123xyz"));
+    }
+
+    #[test]
+    fn normal_text_has_no_secrets() {
+        assert!(find_secrets("notes.md", "keep this secret\ncount=5\ntask-list").is_empty());
     }
 }

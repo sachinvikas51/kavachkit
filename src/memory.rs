@@ -14,7 +14,7 @@ pub struct SessionFacts {
 }
 
 /// True if a single word looks like a secret.
-fn looks_like_secret(word: &str) -> bool {
+pub(crate) fn looks_like_secret(word: &str) -> bool {
     // 1. A known key format anywhere after a symbol: 'sk-…', Authorization:sk-…, ?key=ghp_…
     let has_key_format = word
         .split(|c: char| {
