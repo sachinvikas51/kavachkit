@@ -1,6 +1,6 @@
 [package]
 name = "kavachkit"
-version = "0.1.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Rules, skills, hooks, memory and security checks for Claude Code, in one small CLI"
