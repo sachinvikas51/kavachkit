@@ -16,7 +16,10 @@ pub use install::{
 mod doctor;
 pub use doctor::{Check, Status, check_program_on_path, check_project};
 mod scan;
-pub use scan::{Finding, Level, files_to_scan, find_risky_hooks, find_secrets};
+pub use scan::{
+    Finding, Level, files_to_scan, find_risky_hooks, find_risky_mcp, find_secrets,
+    find_wide_permissions,
+};
 
 /// The part of the hook message that kavachkit cares about.
 #[derive(Debug, Deserialize)]
@@ -93,5 +96,44 @@ mod tests {
     #[test]
     fn broken_json_is_an_error() {
         assert!(parse_hook_input("not json").is_err());
+    }
+
+    #[test]
+    fn finds_wide_permissions() {
+        let text = r#"{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Bash(cargo test:*)"
+    ],
+    "defaultMode": "bypassPermissions"
+  }
+}"#;
+        let findings = find_wide_permissions("settings.json", text);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].line, 4); // "Bash" (unlimited)
+        assert_eq!(findings[1].line, 7); // bypassPermissions
+        assert_eq!(findings[1].level, Level::High);
+    }
+
+    #[test]
+    fn limited_bash_permission_is_fine() {
+        let text = r#""allow": ["Bash(cargo test:*)"]"#;
+        assert!(find_wide_permissions("settings.json", text).is_empty());
+    }
+
+    #[test]
+    fn finds_risky_mcp_servers() {
+        let text = r#"{
+  "mcpServers": {
+    "tool": { "command": "npx", "args": ["some-tool@latest"] },
+    "web": { "url": "http://example.com/mcp" },
+    "safe": { "command": "npx", "args": ["other-tool@1.4.2"] }
+  }
+}"#;
+        let findings = find_risky_mcp(".mcp.json", text);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].line, 3);
+        assert_eq!(findings[1].line, 4);
     }
 }

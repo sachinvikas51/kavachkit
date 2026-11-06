@@ -96,6 +96,65 @@ fn risky_reasons(command: &str) -> Vec<(Level, &'static str, &'static str)> {
     reasons
 }
 
+/// Check 3: settings that let Claude act without asking.
+pub fn find_wide_permissions(file: &str, text: &str) -> Vec<Finding> {
+    if !file.ends_with(".json") {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let trimmed = line.trim().trim_end_matches(',');
+        if line.contains("bypassPermissions") {
+            findings.push(Finding {
+                level: Level::High,
+                file: file.to_string(),
+                line: index + 1,
+                what: "Claude never asks before acting (bypassPermissions)".to_string(),
+                fix: "remove this, so Claude asks you before risky actions".to_string(),
+            });
+        }
+        if line.contains("\"Bash(*)\"") || trimmed == "\"Bash\"" {
+            findings.push(Finding {
+                level: Level::Medium,
+                file: file.to_string(),
+                line: index + 1,
+                what: "Claude may run ANY shell command without asking".to_string(),
+                fix: "allow only the commands you need, like \"Bash(cargo test:*)\"".to_string(),
+            });
+        }
+    }
+    findings
+}
+
+/// Check 4: MCP servers that can change on their own, or connect without encryption.
+pub fn find_risky_mcp(file: &str, text: &str) -> Vec<Finding> {
+    if !file.ends_with(".json") || !text.contains("mcpServers") {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        if line.contains("@latest") {
+            findings.push(Finding {
+                level: Level::Medium,
+                file: file.to_string(),
+                line: index + 1,
+                what: "MCP server uses @latest, so its code can change any day".to_string(),
+                fix: "pin a fixed version, like some-tool@1.4.2".to_string(),
+            });
+        }
+        if line.contains("\"http://") {
+            findings.push(Finding {
+                level: Level::Medium,
+                file: file.to_string(),
+                line: index + 1,
+                what: "MCP server connects without encryption (http://)".to_string(),
+                fix: "use https:// instead".to_string(),
+            });
+        }
+    }
+    findings
+}
+
 /// The files the scanner looks at: CLAUDE.md, .mcp.json and everything inside .claude/.
 pub fn files_to_scan(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
