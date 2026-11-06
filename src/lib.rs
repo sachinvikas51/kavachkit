@@ -18,7 +18,7 @@ pub use doctor::{Check, Status, check_program_on_path, check_project};
 mod scan;
 pub use scan::{
     Finding, Level, files_to_scan, find_prompt_injection, find_risky_hooks, find_risky_mcp,
-    find_secrets, find_wide_permissions,
+    find_secrets, find_wide_permissions, scan_project,
 };
 
 /// The part of the hook message that kavachkit cares about.

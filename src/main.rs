@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use kavachkit::Decision;
+use kavachkit::Level;
 use kavachkit::Status;
 use std::io::BufRead;
 use std::path::Path;
@@ -38,6 +39,11 @@ enum Command {
     },
     /// Check that kavachkit is set up correctly.
     Doctor,
+    /// Check a project's Claude setup for secrets, risky hooks and prompt injection.
+    Scan {
+        /// Folder to scan (default: the current project).
+        path: Option<std::path::PathBuf>,
+    },
     // Called by Claude Code hooks, not by people, so hidden from --help.
     #[command(hide = true)]
     Guard,
@@ -59,7 +65,53 @@ fn main() -> std::io::Result<()> {
         Command::Install { memory, dry_run } => run_install(memory, dry_run),
         Command::Uninstall { dry_run } => run_uninstall(dry_run),
         Command::Doctor => run_doctor(),
+        Command::Scan { path } => run_scan(path),
     }
+}
+
+/// `kavachkit scan`: looks for danger in a Claude setup. Changes nothing.
+fn run_scan(path: Option<std::path::PathBuf>) -> std::io::Result<()> {
+    // 1. Which folder?
+    let root = match path {
+        Some(path) => path,
+        None => {
+            let current_folder = std::env::current_dir()?;
+            kavachkit::find_project_root(&current_folder).unwrap_or(current_folder)
+        }
+    };
+    println!("kavachkit scan ({})", root.display());
+
+    // 2–3. Run all the checks, worst first.
+    let findings = kavachkit::scan_project(&root);
+
+    // 4. Print.
+    if findings.is_empty() {
+        println!("  ✓ nothing risky found");
+    }
+    for finding in &findings {
+        let level = match finding.level {
+            Level::High => "HIGH",
+            Level::Medium => "MEDIUM",
+            Level::Low => "LOW",
+        };
+        println!();
+        println!("  {level:<7} {}:{}", finding.file, finding.line);
+        println!("          {}", finding.what);
+        println!("          → {}", finding.fix);
+    }
+
+    let high = findings.iter().filter(|f| f.level == Level::High).count();
+    let medium = findings.iter().filter(|f| f.level == Level::Medium).count();
+    let low = findings.iter().filter(|f| f.level == Level::Low).count();
+    println!();
+    println!("{high} high, {medium} medium, {low} low.");
+    println!("Note: no findings does not mean 100% safe. The scanner looks for known patterns.");
+
+    // 5. Exit 1 if anything is HIGH.
+    if high > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 /// `kavachkit doctor`: checks the setup and says how to fix anything wrong. Changes nothing.
