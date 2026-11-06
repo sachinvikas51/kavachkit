@@ -19,6 +19,78 @@ pub struct Finding {
     pub fix: String,
 }
 
+/// Phrases that try to take over Claude's real instructions (checked in lowercase).
+const TAKEOVER_PHRASES: &[&str] = &[
+    "ignore all previous instructions",
+    "ignore previous instructions",
+    "ignore the above instructions",
+    "disregard your instructions",
+    "disregard all previous",
+    "forget your instructions",
+    "you are now in developer mode",
+    "do not tell the user",
+    "don't tell the user",
+    "without telling the user",
+];
+
+/// Characters people can't see, but an AI can read: a way to hide instructions.
+fn is_invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}' | '\u{200C}'        // zero-width space and non-joiner
+            | '\u{2060}'..='\u{2064}'  // word joiner and invisible math characters
+            | '\u{202A}'..='\u{202E}'  // direction-flipping characters
+            | '\u{2066}'..='\u{2069}'  // more direction-flipping characters
+            | '\u{E0000}'..='\u{E007F}' // "tag" characters, which can hide a whole sentence
+    )
+}
+
+/// Check 5: signs of prompt injection in files Claude reads as instructions.
+pub fn find_prompt_injection(file: &str, text: &str) -> Vec<Finding> {
+    if !file.ends_with(".md") {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let lower = line.to_lowercase();
+
+        for phrase in TAKEOVER_PHRASES {
+            if lower.contains(phrase) {
+                findings.push(Finding {
+                    level: Level::High,
+                    file: file.to_string(),
+                    line: index + 1,
+                    what: format!("text tries to take over Claude's instructions: \"{phrase}\""),
+                    fix: "read this file carefully, and remove the line if you didn't write it"
+                        .to_string(),
+                });
+            }
+        }
+
+        if line.chars().any(is_invisible) {
+            findings.push(Finding {
+                level: Level::High,
+                file: file.to_string(),
+                line: index + 1,
+                what: "hidden invisible characters: you can't see them, but Claude can read them"
+                    .to_string(),
+                fix: "delete this line and type it again by hand".to_string(),
+            });
+        }
+
+        if line.contains("<!--") {
+            findings.push(Finding {
+                level: Level::Low,
+                file: file.to_string(),
+                line: index + 1,
+                what: "hidden comment: not shown on GitHub, but Claude reads it".to_string(),
+                fix: "check what the comment says".to_string(),
+            });
+        }
+    }
+    findings
+}
+
 /// Check 2: hook commands in JSON files that do something dangerous.
 pub fn find_risky_hooks(file: &str, text: &str) -> Vec<Finding> {
     if !file.ends_with(".json") {
