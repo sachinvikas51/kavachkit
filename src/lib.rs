@@ -125,12 +125,12 @@ mod tests {
     #[test]
     fn finds_risky_mcp_servers() {
         let text = r#"{
-  "mcpServers": {
-    "tool": { "command": "npx", "args": ["some-tool@latest"] },
-    "web": { "url": "http://example.com/mcp" },
-    "safe": { "command": "npx", "args": ["other-tool@1.4.2"] }
-  }
-}"#;
+                            "mcpServers": {
+                                "tool": { "command": "npx", "args": ["some-tool@latest"] },
+                                "web": { "url": "http://example.com/mcp" },
+                                "safe": { "command": "npx", "args": ["other-tool@1.4.2"] }
+                            }
+                            }"#;
         let findings = find_risky_mcp(".mcp.json", text);
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].line, 3);
