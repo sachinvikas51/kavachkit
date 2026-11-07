@@ -199,13 +199,43 @@ pub fn find_wide_permissions(file: &str, text: &str) -> Vec<Finding> {
     findings
 }
 
-/// True if an npm package spec pins a version: `tool@1.4.2` or `@scope/tool@1.4.2`.
-/// `tool`, `@scope/tool` and `tool@latest` are not pinned.
-fn has_fixed_version(package: &str) -> bool {
+/// The version part of a package spec, if any:
+/// `tool@1.4.2` → `1.4.2`, `@scope/tool@1.4.2` → `1.4.2`, `tool==1.4.2` → `1.4.2`.
+fn version_of(package: &str) -> Option<&str> {
+    if let Some((_, version)) = package.split_once("==") {
+        return Some(version);
+    }
     let without_scope = package.strip_prefix('@').unwrap_or(package);
-    match without_scope.split_once('@') {
-        Some((_, version)) => !version.is_empty() && version != "latest" && version != "next",
-        None => false,
+    without_scope.split_once('@').map(|(_, version)| version)
+}
+
+/// True only for an exact version like `1.4.2`, not a range like `^1.4`, `1.x` or `latest`.
+fn is_exact_version(version: &str) -> bool {
+    let starts_with_number = version.chars().next().is_some_and(|c| c.is_ascii_digit());
+    let has_range_symbol = version.contains(['^', '~', '*', '>', '<', '|', ' ']);
+    let has_x_part = version.split('.').any(|part| part == "x" || part == "X");
+    starts_with_number && !has_range_symbol && !has_x_part
+}
+
+/// True if a package spec pins an exact version.
+fn has_fixed_version(package: &str) -> bool {
+    version_of(package).is_some_and(is_exact_version)
+}
+
+/// For "download and run" tools, the package they run, or `None` for other commands.
+/// npx/bunx/uvx: first non-flag arg. pnpm/yarn dlx and pipx run: the arg after "dlx"/"run".
+fn downloaded_package<'a>(command: &str, args: &[&'a str]) -> Option<&'a str> {
+    let tool = command.rsplit(['/', '\\']).next().unwrap_or(command);
+    let words: Vec<&str> = args
+        .iter()
+        .copied()
+        .filter(|arg| !arg.starts_with('-'))
+        .collect();
+    match tool {
+        "npx" | "bunx" | "uvx" => words.first().copied(),
+        "pnpm" | "yarn" if words.first() == Some(&"dlx") => words.get(1).copied(),
+        "pipx" if words.first() == Some(&"run") => words.get(1).copied(),
+        _ => None,
     }
 }
 
@@ -217,7 +247,6 @@ fn line_of(text: &str, needle: &str) -> usize {
         .map_or(1, |index| index + 1)
 }
 
-/// Check 4: MCP servers that can change on their own, or connect without encryption.
 /// Check 4: MCP servers whose code can change on their own, or that connect without encryption.
 pub fn find_risky_mcp(file: &str, text: &str) -> Vec<Finding> {
     if !file.ends_with(".json") || !text.contains("mcpServers") {
@@ -225,41 +254,50 @@ pub fn find_risky_mcp(file: &str, text: &str) -> Vec<Finding> {
     }
     let mut findings = Vec::new();
 
-    // npx / bunx servers without a fixed version download the newest code every time.
-    let parsed: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
-    if let Some(servers) = parsed.get("mcpServers").and_then(|value| value.as_object()) {
-        for server in servers.values() {
-            let command = server
-                .get("command")
-                .and_then(|value| value.as_str())
-                .unwrap_or("");
-            if !(command.ends_with("npx") || command.ends_with("bunx")) {
-                continue;
-            }
-            let args = server.get("args").and_then(|value| value.as_array());
-            let package = args
-                .into_iter()
-                .flatten()
-                .filter_map(|arg| arg.as_str())
-                .find(|arg| !arg.starts_with('-'));
-            let Some(package) = package else {
-                continue;
-            };
-            if !has_fixed_version(package) {
-                findings.push(Finding {
-                    level: Level::Medium,
-                    file: file.to_string(),
-                    line: line_of(text, package),
-                    what: format!(
-                        "MCP server runs {package} with no fixed version, so it downloads the newest code every time"
-                    ),
-                    fix: "pin a fixed version, like some-tool@1.4.2".to_string(),
-                });
+    // Servers run by "download and run" tools, with no exact version, can get new code at any time.
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
+        if let Some(servers) = parsed.get("mcpServers").and_then(|value| value.as_object()) {
+            for server in servers.values() {
+                let command = server
+                    .get("command")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                let args: Vec<&str> = server
+                    .get("args")
+                    .and_then(|value| value.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|arg| arg.as_str())
+                    .collect();
+                let Some(package) = downloaded_package(command, &args) else {
+                    continue;
+                };
+                if !has_fixed_version(package) {
+                    findings.push(Finding {
+                        level: Level::Medium,
+                        file: file.to_string(),
+                        line: line_of(text, package),
+                        what: format!(
+                            "MCP server runs {package} with no exact version, so it can download new code at any time"
+                        ),
+                        fix: "pin an exact version, like tool@1.4.2 (or tool==1.4.2 for Python)"
+                            .to_string(),
+                    });
+                }
             }
         }
+    } else {
+        // Never a silent skip: say the file couldn't be checked.
+        findings.push(Finding {
+            level: Level::Low,
+            file: file.to_string(),
+            line: 1,
+            what: "couldn't read this file as JSON, so its MCP servers weren't checked".to_string(),
+            fix: "make sure it's valid JSON (no comments, no trailing commas)".to_string(),
+        });
     }
 
-    // Plain http:// sends everything without encryption.
+    // Plain http:// sends everything without encryption. This runs even if the JSON was broken.
     for (index, line) in text.lines().enumerate() {
         if line.contains("\"http://") {
             findings.push(Finding {
@@ -271,6 +309,7 @@ pub fn find_risky_mcp(file: &str, text: &str) -> Vec<Finding> {
             });
         }
     }
+
     findings
 }
 /// The files the scanner looks at: CLAUDE.md, .mcp.json and everything inside .claude/.
@@ -475,9 +514,15 @@ mod tests {
     fn knows_which_package_specs_are_pinned() {
         assert!(has_fixed_version("some-tool@1.4.2"));
         assert!(has_fixed_version("@scope/tool@1.4.2"));
+        assert!(has_fixed_version("py-tool==1.4.2"));
+
         assert!(!has_fixed_version("some-tool"));
         assert!(!has_fixed_version("@scope/tool"));
         assert!(!has_fixed_version("some-tool@latest"));
+        assert!(!has_fixed_version("some-tool@^1.4"));
+        assert!(!has_fixed_version("some-tool@~1.4"));
+        assert!(!has_fixed_version("some-tool@1.x"));
+        assert!(!has_fixed_version("some-tool@*"));
     }
 
     #[test]
@@ -498,5 +543,30 @@ mod tests {
         let findings = find_risky_mcp(".mcp.json", text);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].line, 7); // the line with "some-tool"
+    }
+
+    #[test]
+    fn finds_floating_versions_for_every_download_and_run_tool() {
+        let text = r#"{
+  "mcpServers": {
+    "range":  { "command": "npx",  "args": ["-y", "tool-a@^1.4"] },
+    "python": { "command": "uvx",  "args": ["tool-b"] },
+    "pnpm":   { "command": "pnpm", "args": ["dlx", "tool-c"] },
+    "pipx":   { "command": "pipx", "args": ["run", "tool-e==1.0.0"] },
+    "good":   { "command": "npx",  "args": ["-y", "tool-d@1.4.2"] }
+  }
+}"#;
+        let findings = find_risky_mcp(".mcp.json", text);
+        let mut lines: Vec<usize> = findings.iter().map(|finding| finding.line).collect();
+        lines.sort();
+        assert_eq!(lines, vec![3, 4, 5]); // range, uvx, pnpm dlx; pinned pipx and npx are fine
+    }
+
+    #[test]
+    fn broken_mcp_json_is_reported_not_skipped() {
+        let text = "{\n  // a comment makes this invalid JSON\n  \"mcpServers\": {}\n}";
+        let findings = find_risky_mcp(".mcp.json", text);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].level, Level::Low);
     }
 }
