@@ -7,9 +7,14 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- Scanner flags npx/bunx MCP servers with no fixed version (they download the newest code every time).
+- Scanner flags MCP servers that download and run code (npx, bunx, uvx, pnpm dlx,
+  yarn dlx, pipx run) without an exact version. Version ranges like `^1.4`, `~1.4`,
+  `1.x` and `latest` count as not pinned, because they can pull new code at any time.
+- Scanner reports MCP files it can't read as JSON (a low finding), instead of
+  silently skipping them.
 
 ## [0.5.0] - 2026-11-06
+
 
 First public release.
 
