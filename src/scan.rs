@@ -199,22 +199,68 @@ pub fn find_wide_permissions(file: &str, text: &str) -> Vec<Finding> {
     findings
 }
 
+/// True if an npm package spec pins a version: `tool@1.4.2` or `@scope/tool@1.4.2`.
+/// `tool`, `@scope/tool` and `tool@latest` are not pinned.
+fn has_fixed_version(package: &str) -> bool {
+    let without_scope = package.strip_prefix('@').unwrap_or(package);
+    match without_scope.split_once('@') {
+        Some((_, version)) => !version.is_empty() && version != "latest" && version != "next",
+        None => false,
+    }
+}
+
+/// The first line (counted from 1) that mentions `needle` in quotes, or 1 if not found.
+fn line_of(text: &str, needle: &str) -> usize {
+    let quoted = format!("\"{needle}\"");
+    text.lines()
+        .position(|line| line.contains(&quoted))
+        .map_or(1, |index| index + 1)
+}
+
 /// Check 4: MCP servers that can change on their own, or connect without encryption.
+/// Check 4: MCP servers whose code can change on their own, or that connect without encryption.
 pub fn find_risky_mcp(file: &str, text: &str) -> Vec<Finding> {
     if !file.ends_with(".json") || !text.contains("mcpServers") {
         return Vec::new();
     }
     let mut findings = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        if line.contains("@latest") {
-            findings.push(Finding {
-                level: Level::Medium,
-                file: file.to_string(),
-                line: index + 1,
-                what: "MCP server uses @latest, so its code can change any day".to_string(),
-                fix: "pin a fixed version, like some-tool@1.4.2".to_string(),
-            });
+
+    // npx / bunx servers without a fixed version download the newest code every time.
+    let parsed: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
+    if let Some(servers) = parsed.get("mcpServers").and_then(|value| value.as_object()) {
+        for server in servers.values() {
+            let command = server
+                .get("command")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if !(command.ends_with("npx") || command.ends_with("bunx")) {
+                continue;
+            }
+            let args = server.get("args").and_then(|value| value.as_array());
+            let package = args
+                .into_iter()
+                .flatten()
+                .filter_map(|arg| arg.as_str())
+                .find(|arg| !arg.starts_with('-'));
+            let Some(package) = package else {
+                continue;
+            };
+            if !has_fixed_version(package) {
+                findings.push(Finding {
+                    level: Level::Medium,
+                    file: file.to_string(),
+                    line: line_of(text, package),
+                    what: format!(
+                        "MCP server runs {package} with no fixed version, so it downloads the newest code every time"
+                    ),
+                    fix: "pin a fixed version, like some-tool@1.4.2".to_string(),
+                });
+            }
         }
+    }
+
+    // Plain http:// sends everything without encryption.
+    for (index, line) in text.lines().enumerate() {
         if line.contains("\"http://") {
             findings.push(Finding {
                 level: Level::Medium,
@@ -227,7 +273,6 @@ pub fn find_risky_mcp(file: &str, text: &str) -> Vec<Finding> {
     }
     findings
 }
-
 /// The files the scanner looks at: CLAUDE.md, .mcp.json and everything inside .claude/.
 pub fn files_to_scan(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
@@ -424,5 +469,34 @@ mod tests {
         assert_eq!(findings[0].level, Level::High); // worst first
 
         std::fs::remove_dir_all(&project).unwrap();
+    }
+
+    #[test]
+    fn knows_which_package_specs_are_pinned() {
+        assert!(has_fixed_version("some-tool@1.4.2"));
+        assert!(has_fixed_version("@scope/tool@1.4.2"));
+        assert!(!has_fixed_version("some-tool"));
+        assert!(!has_fixed_version("@scope/tool"));
+        assert!(!has_fixed_version("some-tool@latest"));
+    }
+
+    #[test]
+    fn finds_npx_servers_without_a_version_across_lines() {
+        let text = r#"{
+  "mcpServers": {
+    "loose": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "some-tool"
+      ]
+    },
+    "pinned": { "command": "npx", "args": ["-y", "other-tool@1.4.2"] },
+    "local": { "command": "node", "args": ["server.js"] }
+  }
+}"#;
+        let findings = find_risky_mcp(".mcp.json", text);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].line, 7); // the line with "some-tool"
     }
 }
