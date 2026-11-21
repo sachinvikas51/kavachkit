@@ -1,3 +1,4 @@
+[![crates.io](https://img.shields.io/crates/v/kavachkit.svg)](https://crates.io/crates/kavachkit)
 # kavachkit
 
 **Armor for your AI coding agent.** kavachkit adds safety hooks, memory, rules, skills and a security scanner to [Claude Code], in one small, fast Rust tool.
