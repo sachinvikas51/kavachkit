@@ -31,7 +31,37 @@ kavachkit adds real checks that run outside the AI, so they can't be ignored.
 
 You need [Rust](https://rustup.rs) and [Claude Code].
 
-**1. Install the program:**
+**1. Install the program.** Pick one:
+
+**Download** (no Rust needed): get the file for your computer from the
+[latest release](https://github.com/sachinvikas51/kavachkit/releases/latest):
+
+| Your computer | File |
+|---|---|
+| Mac with Apple chip (M1 and newer) | `…-aarch64-apple-darwin.tar.gz` |
+| Mac with Intel chip | `…-x86_64-apple-darwin.tar.gz` |
+| Linux | `…-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows | `…-x86_64-pc-windows-msvc.zip` |
+
+Unpack it and put `kavachkit` somewhere on your PATH, for example:
+
+```bash
+tar xzf kavachkit-*.tar.gz
+sudo mv kavachkit-*/kavachkit /usr/local/bin/
+kavachkit --version
+```
+
+On a Mac, if it says the app can't be opened, run once:
+`xattr -d com.apple.quarantine /usr/local/bin/kavachkit`
+
+Each file has a `.sha256` fingerprint next to it. To check your download:
+`shasum -a 256 -c kavachkit-*.tar.gz.sha256`
+
+**Or build it with Rust:**
+
+```bash
+cargo install --git https://github.com/sachinvikas51/kavachkit
+```
 
 ```bash
 cargo install --git https://github.com/sachinvikas51/kavachkit
